@@ -11,9 +11,12 @@ package org.akaza.openclinica.controller;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.akaza.openclinica.bean.core.Role;
 import org.akaza.openclinica.bean.crf.OdmImportResponse;
+import org.akaza.openclinica.bean.login.StudyUserRoleBean;
 import org.akaza.openclinica.bean.login.UserAccountBean;
 import org.akaza.openclinica.bean.managestudy.StudyBean;
+import org.akaza.openclinica.dao.login.UserAccountDAO;
 import org.akaza.openclinica.dao.managestudy.StudyDAO;
 import org.akaza.openclinica.service.crfdata.OdmStudyImportService;
 import org.apache.commons.dbcp.BasicDataSource;
@@ -44,9 +47,9 @@ public class OdmStudyImportController {
         OdmImportResponse response = new OdmImportResponse();
 
         UserAccountBean owner = (UserAccountBean) request.getSession().getAttribute("userBean");
-        if (owner == null || (!owner.isTechAdmin() && !owner.isSysAdmin())) {
+        if (owner == null) {
             response.setMessage(OdmImportResponse.VALIDATION_FAILED);
-            response.getErrors().add("The Owner User Account is not a Valid Account or Does not have Admin user type");
+            response.getErrors().add("No authenticated user in session");
             return new ResponseEntity<OdmImportResponse>(response, HttpStatus.FORBIDDEN);
         }
 
@@ -55,6 +58,12 @@ public class OdmStudyImportController {
             response.setMessage(OdmImportResponse.VALIDATION_FAILED);
             response.getErrors().add("The Study OID provided in the URL is not a valid Study OID");
             return new ResponseEntity<OdmImportResponse>(response, HttpStatus.BAD_REQUEST);
+        }
+
+        if (!isAuthorized(owner, study)) {
+            response.setMessage(OdmImportResponse.VALIDATION_FAILED);
+            response.getErrors().add("User must be a global administrator or a director/coordinator of the study");
+            return new ResponseEntity<OdmImportResponse>(response, HttpStatus.FORBIDDEN);
         }
 
         response = odmStudyImportService.importStudy(study.getId(), odmXml, owner);
@@ -66,5 +75,18 @@ public class OdmStudyImportController {
 
     protected StudyBean findStudy(String studyOid) {
         return new StudyDAO(dataSource).findByOid(studyOid);
+    }
+
+    protected StudyUserRoleBean getUserRole(UserAccountBean owner, StudyBean study) {
+        return new UserAccountDAO(dataSource).findRoleByUserNameAndStudyId(owner.getName(), study.getId());
+    }
+
+    private boolean isAuthorized(UserAccountBean owner, StudyBean study) {
+        if (owner.isTechAdmin() || owner.isSysAdmin()) {
+            return true;
+        }
+        StudyUserRoleBean role = getUserRole(owner, study);
+        return role != null && role.getRole() != null
+                && (role.getRole().equals(Role.STUDYDIRECTOR) || role.getRole().equals(Role.COORDINATOR));
     }
 }
