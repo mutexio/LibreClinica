@@ -18,6 +18,11 @@ import java.util.Map;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Unmarshaller;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.w3c.dom.Document;
+import org.xml.sax.InputSource;
 
 import org.akaza.openclinica.bean.crf.CrfCreateRequest;
 import org.akaza.openclinica.bean.crf.CrfCreateResponse;
@@ -75,8 +80,12 @@ public class OdmStudyImportService {
         OdmImportResponse response = new OdmImportResponse();
         ODM odm;
         try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document document = builder.parse(new InputSource(new StringReader(odmXml)));
             Unmarshaller unmarshaller = ODM_CONTEXT.createUnmarshaller();
-            odm = (ODM) unmarshaller.unmarshal(new StringReader(odmXml));
+            odm = (ODM) unmarshaller.unmarshal(document);
         } catch (Exception e) {
             response.setMessage(OdmImportResponse.VALIDATION_FAILED);
             response.getErrors().add("Invalid ODM XML: " + e.getMessage());
