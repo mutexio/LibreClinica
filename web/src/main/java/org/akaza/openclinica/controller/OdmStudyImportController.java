@@ -1,0 +1,70 @@
+/*
+ * LibreClinica is distributed under the
+ * GNU Lesser General Public License (GNU LGPL).
+
+ * For details see: https://libreclinica.org/license
+ * copyright (C) 2003 - 2011 Akaza Research
+ * copyright (C) 2003 - 2019 OpenClinica
+ * copyright (C) 2020 - 2026 LibreClinica
+ */
+package org.akaza.openclinica.controller;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.akaza.openclinica.bean.crf.OdmImportResponse;
+import org.akaza.openclinica.bean.login.UserAccountBean;
+import org.akaza.openclinica.bean.managestudy.StudyBean;
+import org.akaza.openclinica.dao.managestudy.StudyDAO;
+import org.akaza.openclinica.service.crfdata.OdmStudyImportService;
+import org.apache.commons.dbcp.BasicDataSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+
+@Controller
+@RequestMapping(value = "/auth/api/v1/odm/studies")
+public class OdmStudyImportController {
+
+    @Autowired
+    private OdmStudyImportService odmStudyImportService;
+
+    @Autowired
+    @Qualifier("dataSource")
+    private BasicDataSource dataSource;
+
+    @RequestMapping(value = "/{studyOid}", method = RequestMethod.POST)
+    public ResponseEntity<OdmImportResponse> importStudy(HttpServletRequest request, @PathVariable("studyOid") String studyOid,
+            @RequestBody String odmXml) {
+        OdmImportResponse response = new OdmImportResponse();
+
+        UserAccountBean owner = (UserAccountBean) request.getSession().getAttribute("userBean");
+        if (owner == null || (!owner.isTechAdmin() && !owner.isSysAdmin())) {
+            response.setMessage(OdmImportResponse.VALIDATION_FAILED);
+            response.getErrors().add("The Owner User Account is not a Valid Account or Does not have Admin user type");
+            return new ResponseEntity<OdmImportResponse>(response, HttpStatus.FORBIDDEN);
+        }
+
+        StudyBean study = findStudy(studyOid);
+        if (study == null || study.getParentStudyId() != 0) {
+            response.setMessage(OdmImportResponse.VALIDATION_FAILED);
+            response.getErrors().add("The Study OID provided in the URL is not a valid Study OID");
+            return new ResponseEntity<OdmImportResponse>(response, HttpStatus.BAD_REQUEST);
+        }
+
+        response = odmStudyImportService.importStudy(study.getId(), odmXml, owner);
+        if (OdmImportResponse.VALIDATION_FAILED.equals(response.getMessage())) {
+            return new ResponseEntity<OdmImportResponse>(response, HttpStatus.BAD_REQUEST);
+        }
+        return new ResponseEntity<OdmImportResponse>(response, HttpStatus.OK);
+    }
+
+    protected StudyBean findStudy(String studyOid) {
+        return new StudyDAO(dataSource).findByOid(studyOid);
+    }
+}
